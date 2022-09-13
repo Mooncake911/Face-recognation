@@ -22,8 +22,10 @@ while m <= 40:
     find_face = fr.face_locations(img1)[0]
     # вычисляем эмбеддинги для каждого лица
     encodings = fr.face_encodings(img1)[0]
+    
     # pисуем рамку
     #cv2.rectangle(img1, (find_face[0], find_face[3]), (find_face[1], find_face[2]), (255, 0, 255), 2)
+    
     # составляем массив из данных
     knownEncodings.append(encodings)
     knownNames.append(name)
@@ -51,9 +53,10 @@ while i <= 40:
             find_face = fr.face_locations(imgTest)[0]
             # вычисляем эмбеддинги для каждого лица
             enTest = fr.face_encodings(imgTest)[0]
+            
             #cv2.rectangle(imgTest, (find_face[0], find_face[3]), (find_face[1], find_face[2]), (255, 0, 255), 2)
+            
             # пробиваем по базе
-            #results = fr.api.compare_faces(data["encodings"], enTest, tolerance=0.6)
             a = 1
             while a <= 40:
                 encodings = data["encodings"][a]
@@ -72,14 +75,16 @@ print('Не найдено или совершена ошибка %d' % not_coun
 
 # -*-The Second algorithm -*-
 
-'''m = random.randint(1, 40)
+m = random.randint(1, 40)
 n = random.randint(1, 10)
 i = random.randint(1, 40)
-j = random.randint(1, 10)'''
-m = 1
+j = random.randint(1, 10)
+
+#Особый случай
+'''m = 1
 n = 1
 i = 1
-j = 2
+j = 2'''
 
 img1 = fr.load_image_file('archive\\s%d\\%d.pgm' % (m, n))
 img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
@@ -97,7 +102,7 @@ try:
     
     cv2.rectangle(imgTest, (loc[0], loc[3]), (loc[1], loc[2]), (255, 0, 255), 2)
 
-    # comparing
+    # Сравниваем
     results = fr.compare_faces([entrain], enTest)
     facDist = fr.face_distance([entrain], enTest)
 
@@ -106,7 +111,7 @@ try:
 except:
     print("not found")
 
-# display image
+# Выыодим на экран 
 cv2.imshow('Picture_from_database s%d.%d' % (m, n), img1)
 cv2.imshow('New_test_picture s%d.%d' % (i, j), imgTest)
 cv2.waitKey(0)
