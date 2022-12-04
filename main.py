@@ -1,263 +1,247 @@
-# Developing a face recognition system
-
-import matplotlib.pyplot as plt
-from scipy.fftpack import fft, dct
-# import face_recognition as fr
+# //Developing a face recognition system\\
+from pyfftw.interfaces.numpy_fft import hfft
+from matplotlib import pyplot as plt
+from scipy.fftpack import dct
 import numpy as np
-import pickle
 import random
+import time
 import cv2
 
+"""Some global parameters"""
+im_count = 1        # Count of image of each person
+scale_percent = 20  # The percent of image (20% it is 20/100 = 1/5 of image)
+his_bin = 32        # Histogram bin
+psz = 4             # The count of division (4x4 = 16 psz)
 
-# -*-The First algorithm -*-
-# Create creat
-def create_data():
-    knownInformation = []
-    knownNames = []
-    i = 1
-    while i <= 40:
-        j = 1
-        while j <= im_count:
-            im = cv2.imread('archive\\s%d\\%d.pgm' % (i, j), 0)
-            name = "s%d" % i
-            sc, ff, dc = scale(im, width, height)
-            form = [sc, cut_image(im), random_pxl(im), ff, dc]
-            knownInformation.append(form)
-            knownNames.append(name)
-            j += 1
-        i += 1
+# The sizes of image
+img_size = cv2.imread('archive\\s1\\1.pgm', 0)
+(height, width) = img_size.shape
 
-    inf = {"information": knownInformation, "names": knownNames}
-    f = open("data_base", "wb")
-    f.write(pickle.dumps(inf))
-    f.close()
+p = 550             # The count of random points
+pxl = [[random.randrange(0, height), random.randrange(0, width)] for i in range(p)]  # The array of p random point
+
+# Outputting
+start_time = time.time()
+fig, ((test, ax1, ax2, ax3, ax4, ax5), (etalon, ax6, ax7, ax8, ax9, ax10)) = \
+    plt.subplots(nrows=2, ncols=6, figsize=(9, 6), num='Face_Recognition', subplot_kw={'xticks': [], 'yticks': []})
+ax_list = [(ax1, ax2, ax3, ax4, ax5), (ax6, ax7, ax8, ax9, ax10)]
+title_list = ("LBPH", "SCALE", "DCT", "FFT", "RANDOM_PXL")
+
+correct = cv2.resize(cv2.imread('green.jpg', cv2.IMREAD_COLOR), (width, height))
+incorrect = cv2.resize(cv2.imread('red.jpg', cv2.IMREAD_COLOR), (width, height))
 
 
-# Scale, FFT, DCT
-def scale(img, w, h):
-    inf = []
-    inf1 = []
-    inf2 = []
+class Person:
+    def __init__(self, i, j):
+        """Vector of methods for image"""
+        self.img = cv2.imread('archive\\s%d\\%d.pgm' % (i, j), 0)
+        self.name = "s%d" % i
+        self.lbp_img = get_lbph(self.img)
+        self.scale, self.FFT, self.DCT = get_scale(self.img, width, height)
+        self.lbph = get_histogram(self.lbp_img)
+        self.random_pxl, self.pxl_img = get_random_pxl(self.img)
+
+        # Form for calculating
+        self.get_from = [self.lbph, self.scale, self.DCT, self.FFT, self.random_pxl]
+        # Form for outputting
+        self.out_form = [self.lbp_img, self.scale, self.DCT, self.FFT, self.pxl_img, self.img]
+
+
+def get_lbph(img):
+    """Create lbp_image"""
+    img_lbp = np.zeros((height, width), dtype=np.uint8)
+    for i in range(2, height-2):    # Delete uninformative frame of image
+        for j in range(2, width-2):
+            if i % 2 == 0 and j % 10 != 0:
+                img_lbp[i, j] = lbp_calculated_pixel(img, i, j)
+            else:
+                img_lbp[i, j] = img[i, j]
+    return img_lbp
+
+
+def get_scale(img, w, h):
+    # Scale
     new_h = int(h * scale_percent / 100)
     new_w = int(w * scale_percent / 100)
-    output = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-    # FFT, DCT
-    output1 = fft(np.array(output)).real
-    output2 = dct(np.array(output), 1)
-    for x in range(new_h):
-        for y in range(new_w):
-            inf.append(output[x][y])
-            inf1.append(output1[x][y])
-            inf2.append(output2[x][y])
-    return np.array(inf), np.array(inf1), np.array(inf2)
+    output = np.array(cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR), np.uint8)
+    # FFT + Scale(as optimization)
+    f = np.array(hfft(output).real, dtype=np.float64)
+    f_shift = np.fft.fftshift(f)
+    size = [6, 5]  # the best constants
+    output1 = np.zeros((2*size[0], 2*size[1]), dtype=np.float64)
+    """Take the most informative part of fft (center)"""
+    a, b = 0, 0
+    for i in range(len(f_shift) // 2 - size[0], len(f_shift) // 2 + size[0]):
+        for j in range(len(f_shift[0]) // 2 - size[1], len(f_shift[0]) // 2 + size[1]):
+            output1[a][b] = f_shift[i][j]
+            b += 1
+        a += 1
+        b = 0
+    # DCT + Scale(as optimization)
+    f = np.array(dct(output, type=2, n=new_h - new_h % 10), dtype=np.float64)
+    output2 = np.zeros((len(f), len(f[0] // 2)), dtype=np.float64)
+    """Take the most informative part of dct (first columns)"""
+    for i in range(len(f)):
+        for j in range(len(f[0]) // 2):
+            output2[i][j] = f[i][j]
+    return output, output1, output2
 
 
-# Random
-def random_pxl(img):
-    inf = []
-    for i in range(len(pxl)):
-        inf.append(img[pxl[i][0]][pxl[i][1]])
-    return np.array(inf)
+def get_random_pxl(img):
+    """Take random points"""
+    rgb_img = np.array(cv2.cvtColor(img, 3))
+    arr = np.zeros(p, dtype=np.uint8)
+    for i in range(p):
+        arr[i] = img[pxl[i][0]][pxl[i][1]]
+        rgb_img[pxl[i][0]][pxl[i][1]] = (255, 255, 0)
+    return arr, rgb_img
 
 
-# Histogram
-def histogram(img):
-    inf = []
-    hist = cv2.calcHist([img], [0], None, [his_index], [0, 256])
-    for i in range(len(hist)):
-        inf.append(hist[i][0])
-    return np.array(inf)
-
-
-# Cut image
-def cut_image(image):
-    psz_height = height//psz
+def get_histogram(img):
+    """Cut image and reckon histogram for each psz"""
+    psz_height = height // psz
     psz_width = width // psz
     box_list = []
     for x in range(0, psz):
         for y in range(0, psz):
-            cropped = image[x*psz_width:(x+1)*psz_height, y*psz_height:(y+1)*psz_width]
-            box_list.append(histogram(cropped))
-    return np.array(box_list)
+            cropped = img[x * psz_width:(x + 1) * psz_height, y * psz_height:(y + 1) * psz_width]
+            box_list.append(cv2.calcHist([cropped], [0], None, [his_bin], [0, 256]))
+    return box_list
 
 
-# Multi_function
-def multi_fun(et_faced, formed, depd, named, a):
-    razed = np.sum(np.absolute(np.subtract(formed, et_faced, dtype=float)))
-    if razed < depd:
-        return razed, data["names"][a]
-    else:
-        return depd, named
+def lbp_calculated_pixel(img, x, y):
+    """Local Binary Pattern"""
+    center = img[x][y]
+
+    def get_pixel(i, j):
+        """
+             232 | 128 |   1            1 |  1->|   0
+            ----------------         ----------------
+             32  | 128 |   2   ->       0 |   X |   0   ->  10000101  ->  X = 133
+            ----------------         ----------------
+             165 |   8 |   4            1 |   0 |   0
+        """
+        new_value = 0
+        if img[i][j] >= center:
+            new_value = 1
+        return new_value
+
+    val_ar = [get_pixel(x - 1, y + 1), get_pixel(x, y + 1), get_pixel(x + 1, y + 1), get_pixel(x + 1, y),
+              get_pixel(x + 1, y - 1), get_pixel(x, y - 1), get_pixel(x - 1, y - 1), get_pixel(x - 1, y)]
+
+    power_val = [1, 2, 4, 8, 16, 32, 64, 128]
+    val = 0
+    for t in range(len(val_ar)):
+        val += val_ar[t] * power_val[t]
+    return val
 
 
-# Search
 def search(arr_names):
-    some_name = "NO"
-    largest = 0
+    """Search the best name"""
+    the_best_etalon = "NO"
+    largest = -1
     for b in range(len(arr_names)):
         idx = 1
         for c in range(len(arr_names)):
             if arr_names[b] == arr_names[c] and b != c:
                 match b:
-                    case 0:
-                        idx += 75
-                    case 1:
-                        idx += 75
-                    case 2:
-                        idx += 72
-                    case 3:
-                        idx += 68
-                    case 4:
-                        idx += 68
-        if largest < idx:
+                    case 0: idx += 79.4
+                    case 1: idx += 74.4
+                    case 2: idx += 74.4
+                    case 3: idx += 74.1
+                    case 4: idx += 73
+        if idx > largest:
             largest = idx
-            some_name = arr_names[b]
-    return some_name
+            the_best_etalon = arr_names[b]
+    return the_best_etalon
 
 
-def print_img(img, et_img):
-    output = cv2.resize(img, (int(width*scale_percent/100), int(height*scale_percent/100)), interpolation=cv2.INTER_LINEAR)
-    et_output = cv2.resize(et_img, (int(width * scale_percent / 100), int(height * scale_percent / 100)), interpolation=cv2.INTER_LINEAR)
-    vis = np.concatenate((output, et_output), axis=1)
-    cv2.imshow('scale', cv2.resize(vis, (width*2, height), interpolation=cv2.INTER_LINEAR))
-
-    plt.hist(cv2.calcHist([img], [0], None, [his_index], [0, 256]))
-    plt.hist(cv2.calcHist([et_img], [0], None, [his_index], [0, 256]))
-    plt.show()
+def make_empty():
+    """Clean window"""
+    for j in range(2):
+        for i in range(len(ax_list[j])):
+            ax_list[j][i].imshow(np.zeros((height, width), dtype=int), cmap='gray')
+            if j:
+                ax_list[j][i].set_title("")
 
 
-# Main
 def main():
     global data
     not_count = 0
     count = 0
     i = 1
     while i <= 40:
-        j = 1
+        j = im_count + 1
         while j <= 10:
-            # Who will be searching
-            imgTest = cv2.imread('archive\\s%d\\%d.pgm' % (i, j), 0)
-            name = "s%d" % i
+            who = Person(i, j)
+            form = who.get_from
+            out = who.out_form
 
-            sc, ff, dc = scale(imgTest, width, height)
-            form = [sc, cut_image(imgTest), random_pxl(imgTest), ff, dc]
+            '''test.imshow(who.img, cmap='gray')
+            test.set_title("Test_img %s" % who.name)'''
 
             # Find the best et_name for each method
+            make_empty()
             arr_names = []
-            for t in range(len(form)):
-                dep = np.inf
-                et_name = "NO"
+            et_name = "NO"
+            for t in range(4, 5):
+                '''ax_list[0][t].imshow(out[t], cmap='gray')
+                ax_list[0][t].set_title(title_list[t])'''
+
+                min_dif = np.inf
                 a = 0
-                while a < im_count*40:
-                    et_face = data["information"][a]
-                    dep, et_name = multi_fun(et_face[t], form[t], dep, et_name, a)
+                found_a = "False"
+                while a < im_count * 40:
+                    et_form = data[a].get_from
+                    et_out = data[a].out_form
+
+                    '''etalon.imshow(et_out[len(et_out) - 1], cmap='gray')
+                    etalon.set_title("Etalon_img %s" % data[a].name)
+
+                    ax_list[1][t].imshow(et_out[t], cmap='gray')
+                    ax_list[1][t].set_title("Searching...")
+                    plt.pause(0.01)'''
+
+                    difference = np.sum(np.absolute(np.subtract(form[t], et_form[t], dtype=float)))
+                    if difference < min_dif:
+                        min_dif = difference
+                        found_a = a
+                        et_name = data[a].name
+
                     a += 1
+                    """If we compare all images -> get result green(Right) or red(Not Right)"""
+                    '''if a == im_count * 40:
+
+                        if et_name == who.name:
+                            mix = cv2.addWeighted(cv2.cvtColor(data[found_a].img, 3), 0.5, correct, 0.5, 0.0)
+                            ax_list[1][t].imshow(mix)
+                            ax_list[1][t].set_title("Found %s" % et_name)
+                            plt.pause(0.1)
+                        else:
+                            mix = cv2.addWeighted(cv2.cvtColor(data[found_a].img, 3), 0.5, incorrect, 0.5, 0.0)
+                            ax_list[1][t].imshow(mix)
+                            ax_list[1][t].set_title("NOT Found")
+                            plt.pause(0.1)'''
+
                 arr_names.append(et_name)
+
             et_name = search(arr_names)
-
-            # Outputting
-            et_img = cv2.imread('archive\\%s\\1.pgm' % et_name, 0)
-            print_img(imgTest, et_img)
-            twoImage = np.hstack((imgTest, et_img))
-            cv2.imshow('searching', twoImage)
-            cv2.waitKey(0)
-
-            if et_name == name:
-                cv2.imshow('Find', twoImage)
-                cv2.waitKey(50)
+            if et_name == who.name:
                 count += 1
             else:
-                cv2.imshow('not Find', twoImage)
-                cv2.waitKey(50)
                 not_count += 1
             j += 1
         i += 1
 
-    count = count - im_count*40
-    print('Всего найдено точных совпадений %d == %f' % (count, 100/(400-im_count*40)*count) + '%')
-    print('Не найдено или совершена ошибка %d == %f' % (not_count, 100/(400-im_count*40)*not_count) + '%')
+    print("Were found %d == %f" % (count, 100 / (400 - 40 * im_count) * count) + "%")
+    print("Were not found %d == %f" % (not_count, 100 / (400 - 40 * im_count) * not_count) + "%")
 
+    '''plt.tight_layout()
+    plt.show()'''
 
-# The sizes of image
-size = cv2.imread('archive\\s1\\1.pgm', 0)
-(height, width) = size.shape
-
-# The count of random points
-p = 500
-# The array of p random point
-pxl = [[random.randrange(0, height), random.randrange(0, width)] for i in range(p)]
-
-# The percent of image (20% it is 20/100 = 1/5 of image)
-scale_percent = 20
-# Histogram index
-his_index = 32
-# The count of division (4x4 = 16 psz)
-psz = 4
-
-# Count of image of each person
-im_count = 3
-create_data()
 
 # Programme start
-data = pickle.loads(open("data_base", "rb").read())
-main()
-
-'''# -*-The Second algorithm -*-
-knownEncodings = []
-knownNames = []
-count = 0
-not_count = 0
-
-m = 1
-while m <= 40:
-    name = "s%d" % m
-    # загружаем изображение и конвертируем его
-    img1 = fr.load_image_file('archive\\s%d\\1.pgm' % m)
-    img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
-    # вычисляем для каждого лица
-    encodings = fr.face_encodings(img1)[0]
-
-    # составляем массив из данных
-    knownEncodings.append(encodings)
-    knownNames.append(name)
-    m += 1
-
-# создаём базу из первых лиц
-data = {"encodings": knownEncodings, "names": knownNames}
-f = open("data_base_1", "wb")
-f.write(pickle.dumps(data))
-f.close()
-
-# Загружаем базу известных лиц
-data = pickle.loads(open("data_base_1", "rb").read())
-i = 1
-while i <= 40:
-    j = 2
-    while j <= 10:
-        # Кого будем искать
-        name = "s%d" % i
-        imgTest = fr.load_image_file('archive\\s%d\\%d.pgm' % (i, j))
-        imgTest = cv2.cvtColor(imgTest, cv2.COLOR_BGR2RGB)
-
-        try:
-            # вычисляем для каждого лица
-            enTest = fr.face_encodings(imgTest)[0]
-
-            a = 1
-            while a <= 40:
-                encodings = data["encodings"][a]
-                match = fr.face_distance([encodings], enTest)
-                if match and name == data["names"][a]:
-                    count += 1
-                a += 1
-
-        except:
-            not_count += 1
-
-        j += 1
-    i += 1
-
-print('Всего найдено точных совпадений %d' % count)
-print('Всего комбинаций %d' % not_count)
-
-cv2.waitKey(0)'''
+if __name__ == '__main__':
+    data = [Person(i, j) for i in range(1, 41) for j in range(1, im_count + 1)]  # Base of etalon images
+    main()
+    print("%.2f seconds" % (time.time() - start_time))
